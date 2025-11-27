@@ -17,7 +17,6 @@ def save_api_details(api_choice: str, api_key: str, azure_endpoint=None, azure_d
        cfg["openai"]["api_key"] = api_key
    with CONFIG_PATH.open("w", encoding="utf-8") as f:
        json.dump(cfg, f, indent=2)
-CONFIG_PATH = Path(__file__).with_name("api_config.json")
 def load_api_details(path: str | Path = CONFIG_PATH) -> dict:
    path = Path(path)
    if not path.exists():
@@ -95,3 +94,4 @@ def build_langfuse_client():
 def get_project_from_cfg(cfg: dict) -> str:
 
    return (cfg.get("langfuse") or {}).get("project", "CustomerSuccessAssistant")
+
