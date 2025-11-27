@@ -1,0 +1,16 @@
+langchain==0.3.27
+langchain-community==0.3.29
+langchain-core==0.3.75
+langchain-openai==0.3.32
+langfuse==2.60.10
+langgraph==0.6.7
+langsmith==0.4.26
+matplotlib==3.10.6
+numpy==2.3.2
+openai==1.106.1
+pydantic==2.11.7
+regex==2025.9.1
+requests==2.32.5
+SQLAlchemy==2.0.43
+streamlit==1.49.1
+urllib3==2.5.0
