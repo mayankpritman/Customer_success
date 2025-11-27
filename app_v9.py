@@ -90,6 +90,49 @@ def extract_charts_and_tables(intermediate_steps, final_text):
            seen.add(fp)
            unique_tables.append(rows)
    return charts, unique_tables
+
+import re
+def extract_sql_queries_from_steps(intermediate_steps):
+   """Pull SQL SELECT queries out of LangChain intermediate_steps."""
+   queries = []
+   if not intermediate_steps:
+       return queries
+   for step in intermediate_steps:
+       # Typical shape: (AgentActionMessageLog, observation)
+       try:
+           action, obs = step
+       except Exception:
+           action, obs = step, None
+       candidates = []
+       # 1) Whole action object as string (contains tool_input, etc.)
+       candidates.append(str(action))
+       # 2) tool_input field
+       if hasattr(action, "tool_input"):
+           candidates.append(str(action.tool_input))
+       # 3) log field (the "Invoking: `sql_query` with `SELECT ...`" line)
+       if hasattr(action, "log"):
+           candidates.append(str(action.log))
+       # 4) message_log / function_call arguments (often has the SELECT again)
+       if hasattr(action, "message_log"):
+           try:
+               for chunk in action.message_log:
+                   candidates.append(str(chunk))
+           except Exception:
+               pass
+       # 5) Also scan the observation side (the rows)
+       if isinstance(obs, dict):
+           candidates.extend(map(str, obs.values()))
+       elif isinstance(obs, list):
+           candidates.append(str(obs))
+       elif obs is not None:
+           candidates.append(str(obs))
+       # --- extract SELECT ... up to ; or newline ---
+       for text in candidates:
+           for match in re.findall(r"(?is)select\s+.*?(?:;|\n|$)", text):
+               q = match.strip("` \n\t")
+               if q.lower().startswith("select") and q not in queries:
+                   queries.append(q)
+   return queries
 def list_tables() -> List[str]:
    try:
        df = execute_query(
@@ -150,9 +193,18 @@ with tab_chat:
                try: st.image(base64.b64decode(b64), width=720)
                except Exception: pass
            # tables
-           for t in m.get("tables", []):
-               try: st.dataframe(t)
-               except Exception: pass
+           sql_list = m.get("sql", [])  # list of SQL strings for this message
+           for idx, t in enumerate(m.get("tables", [])):
+               # Always show an expander above each table
+               with st.expander(f"🧾 View SQL for Table {idx + 1}", expanded=False):
+                   if idx < len(sql_list) and sql_list[idx]:
+                       st.code(sql_list[idx], language="sql")
+                   else:
+                       st.code("-- SQL not captured for this table --", language="sql")
+               try:
+                   st.dataframe(t, use_container_width=True)
+               except Exception:
+                   pass
            # scores
            if m.get("scores") and m["role"] == "assistant":
                with st.expander("Scores", expanded=False):
@@ -167,31 +219,49 @@ with tab_chat:
        st.session_state["chat"].append({"role": "user", "content": q})
        # run agent
        with st.chat_message("assistant"):
-           with st.spinner("Thinking…"):
+           with st.spinner("Thinking..."):
                out: Dict = run_agent_and_log(
                    executor,
                    question=q,
-                   reference="",                                # optional
-                   variant=st.session_state["variant"],         # baseline/strict
-                   chat_history=lc_history(),                   # keep context
+                   reference="",
+                   variant=st.session_state["variant"],
+                   chat_history=lc_history(),
                )
                answer = out.get("answer", "")
-               charts, tables = extract_charts_and_tables(out.get("intermediate_steps", []), answer)
+               # 1) get intermediate steps
+               intermediate_steps = out.get("intermediate_steps", [])
+               print("mayank intermediate_steps:", intermediate_steps)
+               # 2) charts & tables
+               charts, tables = extract_charts_and_tables(intermediate_steps, answer)
+               # 3) SQL queries
+               sql_queries = extract_sql_queries_from_steps(intermediate_steps)
+               print("SQL QUERIES FOUND:", sql_queries)
+               # 4) show answer
                st.markdown(answer)
+               # 5) show charts
                for b64 in charts:
-                   try: st.image(base64.b64decode(b64), width=720)
-                   except Exception: pass
-               for t in tables:
-                   st.dataframe(t)
-       # persist assistant turn
-       st.session_state["chat"].append({
-           "role": "assistant",
-           "content": answer,
-           "charts": charts,
-           "tables": tables,
-           "scores": out.get("scores"),
-           "trace_id": out.get("trace_id"),
-       })
+                   try:
+                       st.image(base64.b64decode(b64), width=720)
+                   except Exception:
+                       pass
+               # 6) show SQL + tables for THIS turn
+               for idx, t in enumerate(tables):
+                   with st.expander(f"🧾 View SQL for Table {idx+1}", expanded=False):
+                       if idx < len(sql_queries) and sql_queries[idx]:
+                           st.code(sql_queries[idx], language="sql")
+                       else:
+                           st.code("-- SQL not captured for this table --", language="sql")
+                   st.dataframe(t, use_container_width=True)
+               # 7) save in chat history
+               st.session_state["chat"].append({
+                   "role": "assistant",
+                   "content": answer,
+                   "charts": charts,
+                   "tables": tables,
+                   "sql": sql_queries,          # 👈 critical
+                   "scores": out.get("scores"),
+                   "trace_id": out.get("trace_id"),
+               })
        st.rerun()  # clear chat_input and render updated history
 # ================== DATA DESCRIPTION ==================
 with tab_data:
