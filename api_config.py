@@ -1,96 +1,125 @@
 # api_config.py
-import json, os
+import json
+import os
 from pathlib import Path
+try:
+   import streamlit as st  # available on Streamlit Cloud
+except ModuleNotFoundError:
+   st = None
 CONFIG_PATH = Path(__file__).with_name("api_config.json")
 DEFAULTS = {
    "api_choice": "azure",
-   "azure": {"api_key": "", "endpoint": "", "deployment": "", "api_version": "2024-02-01"},
+   "azure": {
+       "api_key": "",
+       "endpoint": "",
+       "deployment": "",
+       "api_version": "2024-02-01",
+   },
    "openai": {"api_key": "", "model": "gpt-4o-mini"},
-   "langfuse": {"enabled": False, "public_key": "", "secret_key": "", "host": "https://cloud.langfuse.com", "project": "CustomerSuccessAssistant"}
+   "langfuse": {
+       "enabled": False,
+       "public_key": "",
+       "secret_key": "",
+       "host": "https://cloud.langfuse.com",
+       "project": "CustomerSuccessAssistant",
+   },
 }
-def save_api_details(api_choice: str, api_key: str, azure_endpoint=None, azure_deployment=None, api_version="2024-02-01"):
-   cfg = DEFAULTS.copy()
-   cfg["api_choice"] = api_choice
-   if api_choice.lower().startswith("azure"):
-       cfg["azure"].update({"api_key": api_key, "endpoint": azure_endpoint or "", "deployment": azure_deployment or "", "api_version": api_version})
-   else:
-       cfg["openai"]["api_key"] = api_key
-   with CONFIG_PATH.open("w", encoding="utf-8") as f:
-       json.dump(cfg, f, indent=2)
+
+def _get_secret(name: str, default: str | None = None) -> str | None:
+   """Read from env first, then from st.secrets (Streamlit Cloud)."""
+   if os.getenv(name):
+       return os.getenv(name)
+   if st is not None and name in st.secrets:
+       return st.secrets[name]
+   return default
+
 def load_api_details(path: str | Path = CONFIG_PATH) -> dict:
+   """Load config from JSON (if present) and merge with defaults + secrets."""
+   cfg = json.loads(json.dumps(DEFAULTS))  # deep copy
    path = Path(path)
-   if not path.exists():
-       raise FileNotFoundError(f"{path} not found")
-   with path.open(mode="r", encoding="utf-8") as f:
-       cfg = json.load(f)
-   # --- Langfuse envs (already in your code, keep as-is or similar) ---
-   lf = cfg.get("langfuse") or {}
+   if path.exists():
+       try:
+           with path.open(mode="r", encoding="utf-8") as f:
+               file_cfg = json.load(f)
+           # shallow merge dicts
+           for k, v in file_cfg.items():
+               if isinstance(v, dict) and isinstance(cfg.get(k), dict):
+                   cfg[k].update(v)
+               else:
+                   cfg[k] = v
+       except json.JSONDecodeError as e:
+           raise RuntimeError(
+               f"Invalid JSON in {path}: {e.msg} at line {e.lineno}, col {e.colno}"
+           )
+   # ---- inject secrets ----
+   # Azure/OpenAI
+   az = cfg.setdefault("azure", {})
+   az_key = az.get("api_key") or _get_secret("AZURE_OPENAI_API_KEY") or _get_secret(
+       "OPENAI_API_KEY"
+   )
+   if az_key:
+       az["api_key"] = az_key
+   op = cfg.setdefault("openai", {})
+   op_key = op.get("api_key") or _get_secret("OPENAI_API_KEY")
+   if op_key:
+       op["api_key"] = op_key
+   # Langfuse
+   lf = cfg.setdefault("langfuse", {})
    if lf.get("enabled"):
-       os.environ.setdefault("LANGFUSE_PUBLIC_KEY", lf.get("public_key", ""))
-       os.environ.setdefault("LANGFUSE_SECRET_KEY", lf.get("secret_key", ""))
-       os.environ.setdefault("LANGFUSE_HOST", lf.get("host", "https://cloud.langfuse.com"))
-       os.environ.setdefault("LANGFUSE_PROJECT", lf.get("project", "CustomerSuccessAssistant"))
-   # Always export OpenAI key if present (harmless)
-   ok = (cfg.get("openai") or {}).get("api_key")
-   if ok:
-       os.environ.setdefault("OPENAI_API_KEY", ok)
+       lf_pk = lf.get("public_key") or _get_secret("LANGFUSE_PUBLIC_KEY")
+       lf_sk = lf.get("secret_key") or _get_secret("LANGFUSE_SECRET_KEY")
+       lf_host = lf.get("host") or _get_secret(
+           "LANGFUSE_HOST", "https://cloud.langfuse.com"
+       )
+       lf_proj = lf.get("project") or _get_secret("LANGFUSE_PROJECT")
+       if lf_pk:
+           os.environ["LANGFUSE_PUBLIC_KEY"] = lf_pk
+       if lf_sk:
+           os.environ["LANGFUSE_SECRET_KEY"] = lf_sk
+       if lf_host:
+           os.environ["LANGFUSE_HOST"] = lf_host
+       if lf_proj:
+           os.environ["LANGFUSE_PROJECT"] = lf_proj
+   # export OpenAI key for libraries that expect it
+   if op.get("api_key"):
+       os.environ.setdefault("OPENAI_API_KEY", op["api_key"])
    return cfg
 
 def build_llm_from_cfg(cfg: dict):
-   #from langchain.chat_models import AzureChatOpenAI
-   from langchain_openai import AzureChatOpenAI  # or your actual import
-   import os
-   az = cfg.get("azure", {})
-   
-   # Prefer env / Streamlit secrets, fall back to JSON
-   api_key = os.getenv("AZURE_OPENAI_API_KEY", az.get("api_key", ""))
-   endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", az.get("endpoint", ""))
-   deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", az.get("deployment", ""))
-   api_version = os.getenv("AZURE_OPENAI_API_VERSION", az.get("api_version", "2024-02-01"))
-   print("USING Endpoint:", endpoint)
-   return AzureChatOpenAI(
-           api_key=api_key,
-           azure_endpoint=endpoint,
-           azure_deployment=deployment,
-           api_version=api_version,
+   from langchain.chat_models import AzureChatOpenAI
+   from langchain_openai import ChatOpenAI
+   choice = cfg.get("api_choice", "azure").lower()
+   if choice.startswith("azure"):
+       az = cfg["azure"]
+       return AzureChatOpenAI(
+           api_key=az["api_key"],
+           azure_endpoint=az["endpoint"],
+           azure_deployment=az["deployment"],
+           api_version=az.get("api_version", "2024-02-01"),
            temperature=0,
-   )
-   
-#def build_langfuse_client():
-#   from langfuse import Langfuse
-#   return Langfuse()  # reads LANGFUSE_* envs set above
-class _NoopObs:
-   id = "noop"
+       )
+   else:
+       return ChatOpenAI(model=cfg["openai"]["model"], temperature=0)
+
+# ---------- Langfuse helpers ----------
 class _NoopTrace:
-   id = "noop-trace"
-   def event(self, **kwargs): pass
-   def generation(self, **kwargs): return _NoopObs()
-class _NoopLangfuse:
-   # new SDK names
-   def trace(self, **kwargs): return _NoopTrace()
-   def score(self, **kwargs): pass
-   def flush(self): pass
-   # old SDK names (for our compatibility shims)
-   def create_trace(self, **kwargs): return {"id": "noop-trace"}
-   def create_event(self, **kwargs): pass
-   def create_generation(self, **kwargs): return {"id": "noop"}
-   def create_score(self, **kwargs): pass
+   def __init__(self, *_, **__): ...
+   def trace(self, *_, **__): return self
+   def score(self, *_, **__): return None
+   def flush(self, *_, **__): return None
+   def create_observation(self, *_, **__): return None
+   def create_generation(self, *_, **__): return None
+   def create_score(self, *_, **__): return None
+
 def build_langfuse_client():
+   """Return real Langfuse client if keys exist, otherwise a no-op."""
    from langfuse import Langfuse
-   # ensure load_api_details() has already set these env vars
-   pk = os.getenv("LANGFUSE_PUBLIC_KEY")
-   sk = os.getenv("LANGFUSE_SECRET_KEY")
-   host = os.getenv("LANGFUSE_HOST") or "https://cloud.langfuse.com"
-   try:
-       if pk and sk:
-           # ✅ pass credentials explicitly so the client is enabled
-           return Langfuse(public_key=pk, secret_key=sk, host=host)
-       # No keys? Return a safe no-op client so the app still runs
-       return _NoopLangfuse()
-   except Exception:
-       return _NoopLangfuse()
+   pk = _get_secret("LANGFUSE_PUBLIC_KEY")
+   sk = _get_secret("LANGFUSE_SECRET_KEY")
+   host = _get_secret("LANGFUSE_HOST", "https://cloud.langfuse.com")
+   if pk and sk:
+       return Langfuse(public_key=pk, secret_key=sk, host=host)
+   return _NoopTrace()
+
 def get_project_from_cfg(cfg: dict) -> str:
-
    return (cfg.get("langfuse") or {}).get("project", "CustomerSuccessAssistant")
-
-
