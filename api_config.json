@@ -1,0 +1,20 @@
+{
+ "api_choice": "azure",
+ "azure": {
+   "api_key": "",
+   "endpoint": "",
+   "deployment": "",
+   "api_version": "2024-02-01"
+ },
+ "openai": {
+   "api_key": "",
+   "model": "gpt-4o-mini"
+ },
+ "langfuse": {
+   "enabled": true,
+   "public_key": "",
+   "secret_key": "",
+   "host": "https://cloud.langfuse.com",
+   "project": "CustomerSuccessAssistant"
+ }
+}
