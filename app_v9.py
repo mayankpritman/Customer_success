@@ -196,7 +196,7 @@ with tab_chat:
            sql_list = m.get("sql", [])  # list of SQL strings for this message
            for idx, t in enumerate(m.get("tables", [])):
                # Always show an expander above each table
-               with st.expander(f"🧾 View SQL for Table {idx + 1}", expanded=False):
+               with st.expander(f"🧾 SQL Response", expanded=False):
                    if idx < len(sql_list) and sql_list[idx]:
                        st.code(sql_list[idx], language="sql")
                    else:
@@ -230,7 +230,7 @@ with tab_chat:
                answer = out.get("answer", "")
                # 1) get intermediate steps
                intermediate_steps = out.get("intermediate_steps", [])
-               print("mayank intermediate_steps:", intermediate_steps)
+               #print("mayank intermediate_steps:", intermediate_steps)
                # 2) charts & tables
                charts, tables = extract_charts_and_tables(intermediate_steps, answer)
                # 3) SQL queries
@@ -246,7 +246,7 @@ with tab_chat:
                        pass
                # 6) show SQL + tables for THIS turn
                for idx, t in enumerate(tables):
-                   with st.expander(f"🧾 View SQL for Table {idx+1}", expanded=False):
+                   with st.expander(f"🧾 SQL Response ", expanded=False):
                        if idx < len(sql_queries) and sql_queries[idx]:
                            st.code(sql_queries[idx], language="sql")
                        else:
@@ -312,3 +312,4 @@ with tab_eval:
            agg = df.groupby("variant")[["correctness","conciseness","schema_guard","sql_validity"]].mean(numeric_only=True).round(3)
            st.markdown("### Mean Scores")
            st.table(agg)
+
