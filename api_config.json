@@ -1,19 +1,15 @@
 {
  "api_choice": "azure",
  "azure": {
-   "api_key": "",
-   "endpoint": "",
-   "deployment": "",
+   "endpoint": "https://genaiassets.openai.azure.com",
+   "deployment": "genaiassets_gpt4o",
    "api_version": "2024-02-01"
  },
  "openai": {
-   "api_key": "",
    "model": "gpt-4o-mini"
  },
  "langfuse": {
    "enabled": true,
-   "public_key": "",
-   "secret_key": "",
    "host": "https://cloud.langfuse.com",
    "project": "CustomerSuccessAssistant"
  }
