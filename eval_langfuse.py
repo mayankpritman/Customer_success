@@ -206,7 +206,7 @@ def run_agent_and_log(
    #model_name = (_cfg["azure"]["deployment"]
    #              if _cfg["api_choice"].lower().startswith("azure")
     #             else _cfg["openai"]["model"])
-   model name = os.getenv("AZURE_OPENAI_DEPLOYMENT", _cfg["azure"]["deployment"])
+   model_name = os.getenv("AZURE_OPENAI_DEPLOYMENT", _cfg["azure"]["deployment"])
    gen_id = log_final_generation(trace, question=q, answer=result.get("output", ""), model_name=model_name)
    scores = attach_scores(trace, gen_id, question=q, answer=result.get("output", ""), reference=reference or "")
    sv = sql_validity_from_steps(steps, db_path=_DB_PATH)
@@ -228,3 +228,4 @@ def run_agent_and_log(
        "intermediate_steps": steps,
 
    }
+
