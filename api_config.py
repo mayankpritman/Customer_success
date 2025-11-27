@@ -37,27 +37,25 @@ def load_api_details(path: str | Path = CONFIG_PATH) -> dict:
    return cfg
 
 def build_llm_from_cfg(cfg: dict):
-   from langchain.chat_models import AzureChatOpenAI
-   from langchain_openai import ChatOpenAI  # or your actual import
-   choice = (cfg.get("api_choice") or "azure").lower()
-   if choice.startswith("azure"):
-       az = cfg.get("azure", {})
-       # Prefer env / Streamlit secrets, fall back to JSON
-       api_key = os.getenv("AZURE_OPENAI_API_KEY", az.get("api_key", ""))
-       endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", az.get("endpoint", ""))
-       deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", az.get("deployment", ""))
-       api_version = os.getenv("AZURE_OPENAI_API_VERSION", az.get("api_version", "2024-02-01"))
-       return AzureChatOpenAI(
+   #from langchain.chat_models import AzureChatOpenAI
+   from langchain_openai import AzureChatOpenAI  # or your actual import
+   import os
+   az = cfg.get("azure", {})
+   
+   # Prefer env / Streamlit secrets, fall back to JSON
+   api_key = os.getenv("AZURE_OPENAI_API_KEY", az.get("api_key", ""))
+   endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", az.get("endpoint", ""))
+   deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", az.get("deployment", ""))
+   api_version = os.getenv("AZURE_OPENAI_API_VERSION", az.get("api_version", "2024-02-01"))
+   print("USING Endpoint:", endpoint)
+   return AzureChatOpenAI(
            api_key=api_key,
            azure_endpoint=endpoint,
            azure_deployment=deployment,
            api_version=api_version,
            temperature=0,
-       )
-   else:
-       model = os.getenv("OPENAI_MODEL", (cfg.get("openai") or {}).get("model", "gpt-4o-mini"))
-       api_key = os.getenv("OPENAI_API_KEY", (cfg.get("openai") or {}).get("api_key", ""))
-       return ChatOpenAI(model=model, api_key=api_key, temperature=0)
+   )
+   
 #def build_langfuse_client():
 #   from langfuse import Langfuse
 #   return Langfuse()  # reads LANGFUSE_* envs set above
@@ -94,4 +92,5 @@ def build_langfuse_client():
 def get_project_from_cfg(cfg: dict) -> str:
 
    return (cfg.get("langfuse") or {}).get("project", "CustomerSuccessAssistant")
+
 
